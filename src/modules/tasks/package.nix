@@ -2,8 +2,10 @@
 # regardless of the user's nixpkgs. This ensures the store path matches
 # what CI builds and pushes to devenv.cachix.org.
 #
-# pkgs is the user's nixpkgs — only used for fixed-output fetches
-# (fetchFromGitHub), so the result is independent of the user's nixpkgs version.
+# The locked sources come from builtins.fetchTree, not fetchFromGitHub: a
+# fetcher derivation would make the import below an import from derivation,
+# which evaluators without IFD (iets, or Nix with
+# allow-import-from-derivation = false) refuse.
 { pkgs, lib }:
 let
   lock = builtins.fromJSON (builtins.readFile ./../../../flake.lock);
@@ -11,27 +13,21 @@ let
   lockedNixpkgs = lock.nodes.${nixpkgsNodeName}.locked;
   lockedRustOverlay = lock.nodes.rust-overlay.locked or null;
 
+  fetchLocked = locked: (builtins.fetchTree locked).outPath;
+
   rustOverlaySource =
     if lockedRustOverlay != null && lockedRustOverlay.type == "github" then
-      pkgs.fetchFromGitHub
-        {
-          inherit (lockedRustOverlay) owner repo rev;
-          hash = lockedRustOverlay.narHash;
-        }
+      fetchLocked lockedRustOverlay
     else
       null;
 
   devenvPkgs =
     if lockedNixpkgs.type == "github" then
       let
-        source = pkgs.fetchFromGitHub {
-          inherit (lockedNixpkgs) owner repo rev;
-          hash = lockedNixpkgs.narHash;
-        };
         rustOverlay = if rustOverlaySource != null then import rustOverlaySource else null;
         overlays = lib.optional (rustOverlay != null) rustOverlay;
       in
-      import source { inherit overlays; system = pkgs.stdenv.system; }
+      import (fetchLocked lockedNixpkgs) { inherit overlays; system = pkgs.stdenv.system; }
     else
       builtins.trace
         "warning: devenv-tasks: could not resolve devenv's nixpkgs from flake.lock (type=${lockedNixpkgs.type}); falling back to user's nixpkgs. The resulting store path may not match the cached binary."
