@@ -138,6 +138,10 @@
                       )).overrideAllMesonComponents
                         (
                           _finalAttrs: prevAttrs: {
+                            # meson 1.12 takes every source below the build directory
+                            # for a generated file, and libstore has a build/ source
+                            # directory: name the build directory something else.
+                            mesonBuildDir = "_build";
                             mesonFlags = (prevAttrs.mesonFlags or [ ]) ++ [
                               (prev.lib.mesonOption "default_library" "static")
                             ];
