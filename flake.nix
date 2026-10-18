@@ -190,9 +190,24 @@
                     });
                   };
               crate2nix = final.callPackage "${inputs.crate2nix}/crate2nix/default.nix" { };
-              libghostty-vt = final.callPackage "${inputs.ghostty}/nix/libghostty-vt.nix" {
-                optimize = "ReleaseSafe";
-              };
+              # Zig 0.16 writes the bundled compiler_rt.o with section symbols
+              # that point at no section, and rust-lld fails on a nameless
+              # undefined symbol (nix/fix-zig-section-relocs.py).
+              libghostty-vt =
+                (final.callPackage "${inputs.ghostty}/nix/libghostty-vt.nix" {
+                  optimize = "ReleaseSafe";
+                }).overrideAttrs
+                  (old: {
+                    nativeBuildInputs = old.nativeBuildInputs ++ [ final.buildPackages.python3 ];
+                    postInstall = (old.postInstall or "") + ''
+                      a="$dev/lib/libghostty-vt.a"
+                      m=$($AR t "$a" | grep '/compiler_rt\.o$')
+                      mkdir -p "$(dirname "$m")"
+                      $AR pP "$a" "$m" > "$m"
+                      python3 ${./nix/fix-zig-section-relocs.py} "$m"
+                      $AR rP "$a" "$m"
+                    '';
+                  });
             })
           ];
           pkgs = import nixpkgs { inherit overlays system; };
