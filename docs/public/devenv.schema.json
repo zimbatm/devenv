@@ -361,9 +361,18 @@
       ]
     },
     "NixBackendType": {
-      "type": "string",
-      "enum": [
-        "nix"
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "nix"
+          ]
+        },
+        {
+          "description": "libnix, with the shell evaluated and built by iets.",
+          "type": "string",
+          "const": "iets"
+        }
       ]
     },
     "SecretspecConfig": {
