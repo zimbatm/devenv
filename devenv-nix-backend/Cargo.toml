@@ -27,6 +27,7 @@ sqlx.workspace = true
 
 # Dependencies to nix-bindings-rust crates
 nix-bindings-flake.workspace = true
+iets.workspace = true
 nix-bindings-expr.workspace = true
 nix-bindings-store.workspace = true
 nix-bindings-util.workspace = true

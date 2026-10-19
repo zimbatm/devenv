@@ -324,4 +324,16 @@ in
   nix-bindings-flake = nixLibsOverride;
   nix-bindings-fetchers = nixLibsOverride;
   nix-cmd = nixLibsOverride;
+
+  # devenv links the iets library only. Its tree holds store-path text
+  # (test fixtures), which a fixed-output fetchgit may not reference, so
+  # the locked rev is fetched at evaluation time instead.
+  iets = attrs: {
+    crateBin = [ ];
+    src = builtins.fetchGit {
+      url = "https://github.com/numtide/iets";
+      inherit (attrs.src) rev;
+      allRefs = true;
+    };
+  };
 }

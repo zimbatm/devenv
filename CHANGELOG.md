@@ -4,6 +4,7 @@
 
 ### Improvements
 
+- Added the experimental `backend: iets` setting in `devenv.yaml`. It evaluates, locks and builds through [iets](https://github.com/numtide/iets) and the Nix daemon, without loading the bundled Nix libraries. Its `devenv repl` is a minimal line reader: `:p` and `:q`, no completion.
 - Added the `tui.emoji` user setting. Set it to `false` to replace the emoji in the interactive shell status line, such as the eye in `devenv watching 11 files`, with non-emoji Unicode glyphs. It defaults to `true`, and the status line stays visible with file watching and automatic reload unchanged.
 
 ### Bug Fixes

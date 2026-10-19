@@ -31,7 +31,7 @@ use devenv_core::cachix::{CacheMetadata, CachixCacheInfo, CachixManager};
 use devenv_core::evaluator::Evaluator;
 use devenv_core::realized::RealizedPathsObserver;
 use devenv_core::settings::NixSettings;
-use devenv_nix_backend::NixCBackend;
+use devenv_nix_backend::cachix_host::CachixHost;
 use devenv_nix_backend::cachix_daemon::{ConnectionParams, DaemonSpawnConfig, OwnedDaemon};
 use miette::{IntoDiagnostic, Result, WrapErr, bail};
 use tokio::sync::{Mutex, mpsc};
@@ -73,7 +73,7 @@ impl CachixIntegration {
     /// case nothing is wired up and the backend pays a single
     /// vec-empty branch per realization.
     pub async fn init(
-        cnix: &NixCBackend,
+        cnix: &dyn CachixHost,
         cachix_manager: &Arc<CachixManager>,
         nix_settings: &NixSettings,
         shutdown: &Arc<tokio_shutdown::Shutdown>,
@@ -253,7 +253,7 @@ impl RealizedPathsObserver for MpscObserver {
 
 /// Evaluate `attr` and deserialize. The "Reading {attr}" activity is at Debug
 /// level — these are internal evaluation steps, not user-facing operations.
-async fn eval_field<T: serde::de::DeserializeOwned>(cnix: &NixCBackend, attr: &str) -> Result<T> {
+async fn eval_field<T: serde::de::DeserializeOwned>(cnix: &dyn CachixHost, attr: &str) -> Result<T> {
     let activity =
         start!(Activity::evaluate(format!("Reading {attr}")).level(ActivityLevel::Debug));
     let json = cnix.eval_attr(attr, &activity).await?;
@@ -416,7 +416,7 @@ async fn fetch_public_key(
     Ok(metadata.public_signing_keys.join(" "))
 }
 
-async fn resolve_cachix_binary(cnix: &NixCBackend) -> Result<PathBuf> {
+async fn resolve_cachix_binary(cnix: &dyn CachixHost) -> Result<PathBuf> {
     if let Ok(p) = which::which("cachix") {
         return Ok(p);
     }

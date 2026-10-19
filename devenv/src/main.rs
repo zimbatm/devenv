@@ -908,7 +908,8 @@ fn backend_thread_main(
     event_rx: tokio_mpsc::Receiver<FrontendEvent>,
     shutdown: Arc<Shutdown>,
 ) -> Result<CommandResult> {
-    build_gc_runtime().block_on(async {
+    let libnix = options.devenv.nix_settings.backend == devenv_core::config::NixBackendType::Nix;
+    build_gc_runtime(libnix).block_on(async {
         let output = run_backend(options, shutdown.clone(), frontend_tx, event_rx, caller).await;
 
         // Fallback for paths that didn't run cleanup themselves
@@ -1117,10 +1118,11 @@ fn launch_debugger(devenv: devenv::Devenv, err: miette::Report) -> Result<()> {
 /// already evaluated (or tried to), and `run()` has torn down the renderer,
 /// so the terminal is free.
 fn launch_repl_thread(devenv: devenv::Devenv) -> Result<()> {
+    let libnix = devenv.cnix().is_some();
     let handle = std::thread::Builder::new()
         .name("repl".into())
         .stack_size(devenv_nix_backend::NIX_STACK_SIZE)
-        .spawn(move || build_gc_runtime().block_on(async { devenv.launch_repl().await }))
+        .spawn(move || build_gc_runtime(libnix).block_on(async { devenv.launch_repl().await }))
         .into_diagnostic()
         .wrap_err("Failed to spawn REPL thread")?;
     handle
@@ -1852,17 +1854,22 @@ fn current_thread_runtime(ctx: &str) -> Result<tokio::runtime::Runtime> {
 ///
 /// The blocking pool inherits `on_thread_start` and `thread_stack_size`,
 /// so `spawn_blocking` threads are registered and sized the same way.
-fn build_gc_runtime() -> tokio::runtime::Runtime {
-    devenv_nix_backend::nix_init();
-    tokio::runtime::Builder::new_multi_thread()
+///
+/// `libnix` is false under `backend: iets`, which never calls into Nix:
+/// the library is then not initialised at all.
+fn build_gc_runtime(libnix: bool) -> tokio::runtime::Runtime {
+    let mut builder = tokio::runtime::Builder::new_multi_thread();
+    builder
         .enable_all()
         .thread_name("devenv-worker")
-        .thread_stack_size(devenv_nix_backend::NIX_STACK_SIZE)
-        .on_thread_start(|| {
+        .thread_stack_size(devenv_nix_backend::NIX_STACK_SIZE);
+    if libnix {
+        devenv_nix_backend::nix_init();
+        builder.on_thread_start(|| {
             let _ = devenv_nix_backend::gc_register_current_thread();
-        })
-        .build()
-        .expect("Failed to create tokio runtime")
+        });
+    }
+    builder.build().expect("Failed to create tokio runtime")
 }
 
 /// Prompt for missing secretspec secrets interactively.

@@ -111,11 +111,7 @@ impl Devenv {
     }
 
     async fn search_packages(&self, name: &str) -> Result<Vec<DevenvPackageResult>> {
-        let search_results = self
-            .cnix()
-            .ok_or_else(|| miette::miette!("search requires the C-Nix backend"))?
-            .search(name, None)
-            .await?;
+        let search_results = self.search_nixpkgs(name, None).await?;
         let results = search_results
             .into_iter()
             .map(|(key, value)| DevenvPackageResult {

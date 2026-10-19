@@ -609,8 +609,9 @@ fn configure_remote_builders(
     let Some(builders) = resolve_builders_config(meta, excluded)? else {
         return Ok(());
     };
-    if devenv.cnix().is_none() {
-        bail!("--use-machines-as-builders currently requires the C-Nix backend");
+    if let Some(iets) = devenv.iets() {
+        iets.apply_remote_builders(&builders);
+        return Ok(());
     }
     devenv_nix_backend::backend::apply_remote_builders(&builders)
 }

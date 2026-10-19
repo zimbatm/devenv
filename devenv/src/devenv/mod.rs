@@ -793,6 +793,44 @@ impl Devenv {
         };
 
         let (backend, eval_inputs) = match nix_settings.backend {
+            NixBackendType::Iets => {
+                // No libnix: iets locks, evaluates, and talks to the daemon.
+                let activity = activity!(INFO, evaluate, "Validating lock");
+                let fingerprint = async {
+                    devenv_nix_backend::iets_shell::lock_inputs(
+                        &paths.root,
+                        &paths.lock_file,
+                        &options.inputs,
+                        devenv_nix_backend::iets_shell::LockUpdate::Nothing,
+                        &[],
+                    )
+                }
+                .in_activity(&activity)
+                .await?;
+                let bootstrap_args = Arc::new(build_bootstrap_args(
+                    &config,
+                    &options.imports,
+                    &shell_settings.profiles,
+                    options.from_external,
+                    options.require_version_match,
+                    options.is_testing,
+                    secretspec_data.as_ref(),
+                    &fingerprint,
+                )?);
+                let iets = devenv_nix_backend::iets_backend::IetsBackend::new(
+                    paths.clone(),
+                    bootstrap_args.clone(),
+                    Some(port_allocator.clone()),
+                    &options.nixpkgs_config,
+                )?;
+                (
+                    Backend::<dyn Evaluator>::new(
+                        Arc::new(iets) as Arc<dyn Evaluator>,
+                        bootstrap_args,
+                    ),
+                    devenv_eval_cache::EvalInputTracker::new(),
+                )
+            }
             NixBackendType::Nix => {
                 // Phase 1: bring up Nix, open the store, build settings,
                 // validate the lock against a transient eval state, then
@@ -1700,6 +1738,40 @@ impl Devenv {
             .as_concrete::<devenv_nix_backend::NixCBackend>()
     }
 
+    /// The iets backend, when `backend: iets` selected it.
+    pub fn iets(&self) -> Option<&devenv_nix_backend::iets_backend::IetsBackend> {
+        self.backend
+            .as_concrete::<devenv_nix_backend::iets_backend::IetsBackend>()
+    }
+
+    /// Drops what the backend evaluated, for the next evaluation to start over.
+    fn invalidate_eval(&self) -> Result<()> {
+        if let Some(iets) = self.iets() {
+            iets.invalidate();
+            return Ok(());
+        }
+        self.require_cnix()?.invalidate_eval_state()
+    }
+
+    async fn eval_attr(&self, attr: &str, activity: &Activity) -> Result<String> {
+        if let Some(iets) = self.iets() {
+            return iets.eval_attr(attr, activity).await;
+        }
+        self.require_cnix()?.eval_attr(attr, activity).await
+    }
+
+    /// Packages of `pkgs` that `name`, a regex, matches.
+    pub async fn search_nixpkgs(
+        &self,
+        name: &str,
+        max_results: Option<usize>,
+    ) -> Result<devenv_core::evaluator::SearchResults> {
+        if let Some(iets) = self.iets() {
+            return iets.search(name, max_results).await;
+        }
+        self.require_cnix()?.search(name, max_results).await
+    }
+
     fn require_cnix(&self) -> Result<&devenv_nix_backend::NixCBackend> {
         self.cnix()
             .ok_or_else(|| miette!("C-Nix backend required for this operation"))
@@ -1712,11 +1784,13 @@ impl Devenv {
     pub async fn setup_cachix(&self) -> Result<()> {
         self.cachix
             .get_or_try_init(|| async {
-                let Some(cnix) = self.cnix() else {
-                    return Ok(None);
+                let host: &dyn devenv_nix_backend::cachix_host::CachixHost = match (self.iets(), self.cnix()) {
+                    (Some(iets), _) => iets,
+                    (None, Some(cnix)) => cnix,
+                    (None, None) => return Ok(None),
                 };
                 cachix::CachixIntegration::init(
-                    cnix,
+                    host,
                     &self.cachix_manager,
                     &self.options.nix_settings,
                     &self.shutdown,
@@ -1748,7 +1822,7 @@ impl Devenv {
         // since the previous evaluation.
         self.port_allocator.clear_seeds();
         self.seed_running_ports().await;
-        self.require_cnix()?.invalidate_eval_state()
+        self.invalidate_eval()
     }
 
     pub async fn print_dev_env(&self, json: bool) -> Result<String> {
@@ -1790,7 +1864,7 @@ impl Devenv {
         // Enter-shell tasks may have changed inputs observed by Nix primops. Drop
         // both the cached devenv value and its EvalState before evaluating again;
         // without the eval cache there is no resource replay to invalidate them.
-        self.require_cnix()?.invalidate_eval_state()?;
+        self.invalidate_eval()?;
         let env = self.get_dev_environment_inner(false).await?;
         self.cache_dev_environment(env);
         Ok(())
@@ -1802,7 +1876,6 @@ impl Devenv {
             Activity::evaluate(format!("Reading {ATTR}")).level(ActivityLevel::Debug)
         );
         let json = self
-            .require_cnix()?
             .eval_attr(ATTR, &activity)
             .await
             .wrap_err("Failed to evaluate dotenv configuration")?;
@@ -2116,14 +2189,23 @@ impl Devenv {
         };
 
         let activity = activity!(INFO, operation, &msg);
-        let cnix = self.require_cnix()?;
         async {
-            cnix.update(
-                input_name,
-                &self.options.inputs,
-                &self.options.input_overrides.override_inputs,
-            )
-            .await
+            if let Some(iets) = self.iets() {
+                return iets
+                    .update(
+                        input_name,
+                        &self.options.inputs,
+                        &self.options.input_overrides.override_inputs,
+                    )
+                    .await;
+            }
+            self.require_cnix()?
+                .update(
+                    input_name,
+                    &self.options.inputs,
+                    &self.options.input_overrides.override_inputs,
+                )
+                .await
         }
         .in_activity(&activity)
         .await?;
@@ -2140,11 +2222,17 @@ impl Devenv {
 
     pub async fn prepare_repl(&self) -> Result<()> {
         self.setup_cachix().await?;
+        if self.iets().is_some() {
+            return Ok(());
+        }
         self.require_cnix()?.prepare_repl().await
     }
 
     pub async fn launch_repl(&self) -> Result<()> {
         self.setup_cachix().await?;
+        if let Some(iets) = self.iets() {
+            return iets.repl().await;
+        }
         self.require_cnix()?.launch_repl().await
     }
 
@@ -3723,8 +3811,15 @@ impl Devenv {
         self.setup_cachix().await?;
         let gc_root = self.devenv_dot_gc.join("shell");
         let span = debug_span!("evaluating_dev_env");
-        let cnix = self.require_cnix()?;
-        let env = cnix.dev_env(json, &gc_root).instrument(span).await?;
+        let env = match self.iets() {
+            Some(iets) => iets.dev_env(json, &gc_root).instrument(span).await?,
+            None => {
+                self.require_cnix()?
+                    .dev_env(json, &gc_root)
+                    .instrument(span)
+                    .await?
+            }
+        };
 
         // Save timestamped GC root symlink for history tracking and GC protection
         // This is backend-independent: all backends create a gc_root symlink,

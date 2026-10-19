@@ -17,6 +17,10 @@ pub mod cnix_store;
 pub use cnix_store::CNixStore;
 
 pub mod gc_boehm;
+
+pub mod cachix_host;
+pub mod iets_backend;
+pub mod iets_shell;
 pub use gc_boehm::{
     NIX_STACK_SIZE, init as nix_init, register_current_thread as gc_register_current_thread,
     unregister_current_thread as gc_unregister_current_thread,

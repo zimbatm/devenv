@@ -59,6 +59,7 @@ devenv-cache-core = { path = "devenv-cache-core" }
 nix-conf-parser = { path = "nix-conf-parser" }
 tokio-shutdown = { path = "tokio-shutdown" }
 
+iets = { git = "https://github.com/numtide/iets", branch = "devenv-library" }
 nix-bindings-flake = { git = "https://github.com/cachix/nix-bindings-rust.git", branch = "2.35" }
 nix-bindings-expr = { git = "https://github.com/cachix/nix-bindings-rust.git", branch = "2.35" }
 nix-bindings-store = { git = "https://github.com/cachix/nix-bindings-rust.git", branch = "2.35" }

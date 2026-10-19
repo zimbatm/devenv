@@ -143,9 +143,7 @@ impl DevenvMcpServer {
         info!("Fetching available packages from nixpkgs...");
 
         let search_results = devenv
-            .cnix()
-            .ok_or_else(|| miette!("search requires the C-Nix backend"))?
-            .search(".*", None)
+            .search_nixpkgs(".*", None)
             .await?;
 
         let packages: Vec<PackageInfo> = search_results

@@ -65,6 +65,8 @@ impl CachixAuthToken {
 pub enum NixBackendType {
     #[default]
     Nix,
+    /// libnix, with the shell evaluated and built by iets.
+    Iets,
 }
 
 #[derive(schematic::Config, Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]

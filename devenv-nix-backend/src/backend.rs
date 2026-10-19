@@ -1517,7 +1517,7 @@ fn build_eval_state(
     Ok(eval_state)
 }
 
-fn extract_bootstrap_files(dotfile_dir: &Path) -> Result<PathBuf> {
+pub(crate) fn extract_bootstrap_files(dotfile_dir: &Path) -> Result<PathBuf> {
     use std::io::Write;
 
     static BOOTSTRAP_DIR: include_dir::Dir<'_> =
@@ -1552,7 +1552,7 @@ fn extract_bootstrap_files(dotfile_dir: &Path) -> Result<PathBuf> {
     Ok(bootstrap_path)
 }
 
-fn write_nixpkgs_config(nixpkgs_config: &NixpkgsConfig, dotfile_dir: &Path) -> Result<PathBuf> {
+pub(crate) fn write_nixpkgs_config(nixpkgs_config: &NixpkgsConfig, dotfile_dir: &Path) -> Result<PathBuf> {
     let nixpkgs_config_base = ser_nix::to_string(&NixpkgsConfigForNix::from(nixpkgs_config))
         .map_err(|e| miette!("Failed to serialize nixpkgs config: {}", e))?;
     let nixpkgs_config_nix = format!(

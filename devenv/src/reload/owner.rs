@@ -97,11 +97,14 @@ pub fn spawn_owner(
     verbosity: VerbosityLevel,
 ) -> (DevenvClient, JoinHandle<Devenv>) {
     let (tx, mut rx) = mpsc::channel::<DevenvRequest>(32);
+    let libnix = devenv.cnix().is_some();
     let handle = std::thread::Builder::new()
         .name("devenv-reload-owner".into())
         .stack_size(NIX_STACK_SIZE)
         .spawn(move || {
-            let _ = gc_register_current_thread();
+            if libnix {
+                let _ = gc_register_current_thread();
+            }
             let rt = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()
